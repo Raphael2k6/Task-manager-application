@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const validator = require('validator')
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const Tasks = require('./task');
 
 // the schema helps to utilize a middleware function, a function that can help to do something before or after an action 
 // like saving things to the db is performed
@@ -52,8 +53,21 @@ const userSchema = new mongoose.Schema({
             type: String,
             required: true
         }
-    }]
+    }],
+    avatar: {
+        type: Buffer
+    }
+}, {
+    timestamps: true
 })
+
+userSchema.virtual('tasks', {  
+    ref: 'Tasks',
+    localField: '_id', // 
+    foreignField: 'owner' // the name on the task model used to create therelationship
+})
+
+
 
 // hide private info like password and token
 // first method -  THIS METHOD IS MANUAL AS IT NEEDS TO BE CALLED IN ALL THE ROUTES
@@ -74,6 +88,7 @@ userSchema.methods.toJSON = function () {
 
     delete userObject.password;
     delete userObject.tokens;
+    delete userObject.avatar;
     
     return userObject;
 }
@@ -81,7 +96,7 @@ userSchema.methods.toJSON = function () {
 //methods are accessible on the instances (instance methods)
 userSchema.methods.generateAuthToken = async function () {
     const user = this;
-    const token = jwt.sign({ _id: user._id.toString() }, 'hello')
+    const token = jwt.sign({ _id: user._id.toString() }, process.env.JWT_SECRET)
     user.tokens = user.tokens.concat({token})
     await user.save();
 
@@ -111,8 +126,16 @@ userSchema.pre('save', async function (next) {
     if (user.isModified("password")) {
         user.password = await bcrypt.hash(user.password, 8);
     }
-    next()
+    next();
 
+})
+
+//Delete user task when user is removed
+userSchema.pre('remove', async function (next) {
+    const user = this;
+    await Tasks.deleteMany({ owner: user._id})
+
+    next();
 })
 
 const User = mongoose.model('User', userSchema)
